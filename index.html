@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ブリレフ滝水分配君</title>
+<style>
+body { font-family: sans-serif; margin: 20px; background: #f0f0f0; }
+h2 { text-align: center; }
+
+.card {
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.controls { text-align: center; margin-bottom: 10px; }
+button {
+  margin: 5px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #4CAF50;
+  color: white;
+  cursor: pointer;
+}
+button:hover { background: #45a049; }
+
+.members-container { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.member-card, .member-result-card, .transfer-card, .stat-card {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  background: #fafafa;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  min-width: 150px;
+}
+
+.result-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 15px 20px;
+  margin-top: 10px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+}
+.result-card h3 { margin-top: 0; margin-bottom: 8px; font-size: 1.1em; color: #333; }
+.result-card .members-result-container { display: flex; flex-wrap: wrap; gap: 8px; }
+.result-card .transfers-container { display: flex; flex-direction: column; gap: 6px; }
+
+#result { display: flex; flex-direction: column; gap: 10px; }
+
+#totalDisplay {
+  text-align: center;
+  margin-top: 10px;
+  font-weight: bold;
+  font-size: 1.1em;
+  color: #333;
+}
+</style>
+</head>
+<body>
+<div class="card">
+<h2>ブリレフ滝水分配君</h2>
+
+<div class="controls">
+  <button onclick="addMember()">メンバー追加</button>
+  <button onclick="resetValues()">リセット</button>
+  <button onclick="loadPreset()">プリセット読み込み</button>
+</div>
+
+<div id="totalDisplay">現在の獲得合計：0個</div>
+
+<div class="members-container" id="membersContainer"></div>
+
+<div class="controls">
+  <button onclick="calculate()">分配計算</button>
+</div>
+
+<div id="result"></div>
+</div>
+
+<script>
+const presetMembers = ["あえ","あん","おり","きゅー","ほたて"];
+
+function addMember(name="") {
+  const container = document.getElementById("membersContainer");
+  const div = document.createElement("div");
+  div.className = "member-card";
+  div.innerHTML = `
+    <input type="text" value="${name}" placeholder="名前">
+    <input type="number" min="0" value="" oninput="updateTotal()">
+    <button onclick="deleteMember(this)">削除</button>
+  `;
+  container.appendChild(div);
+  updateTotal(); // ★追加直後にも合計更新
+}
+
+function deleteMember(button) { 
+  button.parentNode.remove(); 
+  updateTotal(); // ★削除時も更新
+}
+
+function resetValues() { 
+  document.getElementById("membersContainer").innerHTML = ""; 
+  document.getElementById("result").innerHTML = ""; 
+  updateTotal();
+}
+
+function loadPreset() { 
+  resetValues(); 
+  presetMembers.forEach(name => addMember(name)); 
+}
+
+// ★リアルタイム合計更新関数
+function updateTotal() {
+  const inputs = document.querySelectorAll("#membersContainer input[type=number]");
+  let total = 0;
+  inputs.forEach(i => total += parseInt(i.value) || 0);
+  document.getElementById("totalDisplay").textContent = `現在の合計：${total}個`;
+}
+
+function shuffle(array){ for(let i=array.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[array[i],array[j]]=[array[j],array[i]];} }
+
+function calculate() {
+  const cards = Array.from(document.querySelectorAll("#membersContainer .member-card"));
+  if(cards.length===0){ 
+    document.getElementById("result").innerHTML=`<div class="result-card"><p>⚠️ メンバーがいません</p></div>`; 
+    return; 
+  }
+
+  let members = cards.map(c=>({
+    name:c.querySelector("input[type=text]").value||"名無し",
+    count:parseInt(c.querySelector("input[type=number]").value)||0,
+    target:0
+  }));
+
+  const total = members.reduce((sum,m)=>sum+m.count,0);
+  const avg = Math.floor(total/members.length);
+  let remainder = total%members.length;
+  members.forEach(m=>m.target=avg);
+  shuffle(members);
+  members.sort((a,b)=>b.count-a.count);
+  for(let i=0;i<remainder;i++){ members[i % members.length].target++; }
+
+  // --- 最小譲渡計算 ---
+  let surplus = members.map(m=>m.count - m.target);
+  let transfersMin = null;
+
+  function backtrack(sur, idx, path) {
+    if(idx >= surplus.length) { 
+      if(transfersMin===null || (path.length>0 && path.length<transfersMin.length)) transfersMin = path.map(p=>({...p}));
+      return; 
+    }
+    if(sur[idx] <= 0) { backtrack(sur, idx+1, path); return; }
+    for(let j=0;j<surplus.length;j++) {
+      if(sur[j]>=0) continue;
+      let xfer = Math.min(sur[idx], -sur[j]);
+      if(xfer<=0) continue;
+      let surCopy = sur.slice();
+      surCopy[idx]-=xfer; surCopy[j]+=xfer;
+      backtrack(surCopy, idx, path.concat([{from: members[idx].name, to: members[j].name, count:xfer}]));
+    }
+  }
+  backtrack(surplus, 0, []);
+
+  const memberResultHTML = members.map(m=>{
+    return `<div class="member-result-card"><strong>${m.name}</strong>：${m.target}個</div>`;
+  }).join("");
+
+  const transferHTML = transfersMin ? transfersMin
+    .sort((a,b)=>{
+      if(a.from!==b.from) return a.from.localeCompare(b.from);
+      return a.to.localeCompare(b.to);
+    })
+    .map(t=>`<div class="transfer-card">${t.from} → ${t.to} に ${t.count}個 (${t.count*80}万ゴールド)</div>`).join("") : `<p>譲渡なし</p>`;
+
+  const statHTML = `
+    <div class="stat-card"><strong>合計</strong>：${total}個</div>
+    <div class="stat-card"><strong>平均</strong>：${avg}個</div>
+  `;
+
+  document.getElementById("result").innerHTML=`
+    <div class="result-card">
+      <h3>統計</h3>
+      <div class="members-result-container">
+        ${statHTML}
+      </div>
+    </div>
+    <div class="result-card">
+      <h3>分配結果</h3>
+      <div class="members-result-container">
+        ${memberResultHTML}
+      </div>
+    </div>
+    <div class="result-card">
+      <h3>譲渡リスト</h3>
+      <div class="transfers-container">
+        ${transferHTML}
+      </div>
+    </div>
+  `;
+}
+</script>
+</body>
+</html>
